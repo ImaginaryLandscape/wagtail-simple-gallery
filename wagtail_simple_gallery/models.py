@@ -20,6 +20,9 @@ except ImportError:
 
 from wagtail.images import get_image_model
 
+if 'wagtailmedia' in settings.INSTALLED_APPS:
+    from wagtailmedia.models import get_media_model
+
 from django.shortcuts import render, redirect
 from wagtail.contrib.routable_page.models import RoutablePageMixin, route
 from taggit.models import Tag
@@ -141,15 +144,33 @@ class SimpleGalleryIndex(RoutablePageMixin, Page):
 def get_gallery_images(collection, page=None, tags=None):
     # Tags must be a list of tag names like ["Hasthag", "Kawabonga", "Winter is coming"]
     images = None
+    videos = None
+    results = []
+
     try:
         images = get_image_model().objects.filter(collection__name=collection).prefetch_related("tags")
-        if page:
-            if page.order_images_by == 1:
-                images = images.order_by("title")
-            elif page.order_images_by == 2:
-                images = images.order_by("-created_at")
+        if images and tags:
+            images = images.filter(tags__name__in=tags).prefetch_related("tags").distinct()
     except Exception as e:
         pass
-    if images and tags:
-        images = images.filter(tags__name__in=tags).prefetch_related("tags").distinct()
-    return images
+    try:
+        videos = get_media_model().objects.filter(collection__name=collection).prefetch_related("tags")
+        if videos and tags:
+            videos = videos.filter(tags__name__in=tags).prefetch_related("tags").distinct()
+    except Exception as e:
+        pass
+
+    if images and videos:
+        results = list(images) + list(videos)
+    elif images:
+        results = list(images)
+    elif videos:
+        results = list(videos)
+
+    if page and results:
+        if page.order_images_by == 1:
+            results = sorted(results, key=lambda x: x.title.lower())
+        elif page.order_images_by == 2:
+            results = sorted(results, key=lambda x: x.created_at, reverse=True)
+
+    return results
